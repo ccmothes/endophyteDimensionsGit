@@ -2,16 +2,35 @@
 
 # SET UP --------------------------------------------------------------------
 
-library(rgdal)
-library(rgeos)
-library(rJava)
-options(java.parameters = "-Xmx12g" ) #may want to change this? I think desktop has 16gb mem
-library(dismo)
-library(dplyr) 
-library(readr)
-library(stringr)
+#create package load function to install (if necessary) and load all required packages
+packageLoad <-
+  function(x) {
+    for (i in 1:length(x)) {
+      if (!x[i] %in% installed.packages()) {
+        install.packages(x[i])
+      }
+      library(x[i], character.only = TRUE)
+    }
+  }
+#install and/or load packages
+packageLoad(
+  c(
+    "rgdal",
+    "rgeos",
+    "rJava",
+    "dismo",
+    "dplyr",
+    "purrr",
+    "readr",
+    "stringr",
+    "googledrive"
+  )
+)
 
-rasterOptions(tmpdir = 'temp/', progress = "text", maxmemory = 12e9)  #if changing java params above, match here too
+options(java.parameters = "-Xmx12g" ) #may want to change this. I think desktop has 16gb mem
+
+#if changing java params above, match maxmemory here too
+rasterOptions(tmpdir = 'temp/', progress = "text", maxmemory = 12e9)  
 
 
 #create raster averaging function (at least twice as fast as 'calc')
@@ -26,9 +45,6 @@ rasterstack_mean <- function(x) {
 }
 
 
-############ EDIT THIS ########################
-# set project working directory
-setwd("/scratch/projects/endophytedim")
 
 
 # FILE PREP ----------------------------------------------
@@ -110,7 +126,8 @@ names(final.summary) <-
   )
 
 
-##### EDIT THIS ############ batch number is the range of index #'s in species file you want to run
+##### EDIT THIS ############ 
+#batch number is the range of index #'s in species file you want to run
 batch <- 
 
 
@@ -118,13 +135,12 @@ batch <-
 dir.create(paste("batch", batch[1], batch[length(batch)], sep = "_"))  
 
 baseDir <-
-  paste(paste0(
-    "/scratch/projects/endophytedim/",
-    "batch"),
+  paste0(getwd(),
+    paste("/batch",
     batch[1],
     batch[length(batch)],
     sep = "_"
-  )
+  ))
   
 setwd(baseDir)
 dir.create("results")
@@ -416,7 +432,8 @@ for (i in batch[1]:batch[length(batch)]) {
                 options="INTERLEAVE=BAND", overwrite = TRUE)
     
     
-   
+   # upload results folder to googledrive
+    drive_upload
     
     print(i)
     
@@ -434,6 +451,6 @@ write.csv(final.summary, paste(batch[1], batch[length(batch)], "final_summary.cs
 
 
 
-# remove files
+# remove temp files
 removeTmpFiles(h=0)
 
