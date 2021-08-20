@@ -6,7 +6,7 @@ for (i in 1:3) {
   tryCatch({
     print(i)
     if (i==2) stop("Urgh, an error !")
-  }, error=function(e){ err <<- cat("Species=", specs[i], "Index =", i, 
+  }, error=function(e){cat("Species=", specs[i], "Index =", i, 
                                     "ERROR :", conditionMessage(e), "\n")})
 }
 

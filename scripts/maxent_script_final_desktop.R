@@ -12,6 +12,7 @@ packageLoad <-
       library(x[i], character.only = TRUE)
     }
   }
+
 #install and/or load packages
 packageLoad(
   c(
@@ -27,10 +28,14 @@ packageLoad(
   )
 )
 
-options(java.parameters = "-Xmx12g" ) #may want to change this. I think desktop has 16gb mem
+options(java.parameters = "-Xmx12g" ) #may want to change this
 
 #if changing java params above, match maxmemory here too
-rasterOptions(tmpdir = 'temp/', progress = "text", maxmemory = 12e9)  
+rasterOptions(progress = "text", maxmemory = 12e9)  
+
+
+#set path to google drive folder for file saving later
+drive_results <- "https://drive.google.com/drive/u/0/folders/1osfjlJP5dCoBp6COXMveidomPZPD_xGi"
 
 
 #create raster averaging function (at least twice as fast as 'calc')
@@ -50,17 +55,15 @@ rasterstack_mean <- function(x) {
 # FILE PREP ----------------------------------------------
 
 # read in global predictors
-
-
 bioclim <- brick("data/bioclim_prj_5km.tif")
+
 # need to add layer names, not preserved when raster was written
 names(bioclim) <- c("bio1", "bio10", "bio11", "bio12", "bio13", "bio14",
                     "bio15", "bio16", "bio17", "bio18", "bio19", "bio2",
                     "bio3", "bio4", "bio5", "bio6", "bio7", "bio8", "bio9")
 
 
-# read in occurrences (convert to spatial based on clim params)
-
+# read in occurrences (and convert to spatial based on bioclim params)
 load("data/plant.occ.final.RData") # this loads object 'plant.occ'
 
 occ.sp <-SpatialPointsDataFrame(plant.occ[,c('decimallongitude','decimallatitude'),], 
@@ -78,8 +81,6 @@ specs <- read.csv("data/species_list.csv") %>% pull(species)
 
 
 # read in buffer distance file
-## make sure all specs are in this file
-
 buffer_dist <- read.csv("data/buffer_dist_model.csv")
 
 
@@ -142,12 +143,12 @@ baseDir <-
     sep = "_"
   ))
   
-setwd(baseDir)
+setwd(baseDir) #now working in batch specific directory
 dir.create("results")
   
 # for each species:
 for (i in batch[1]:batch[length(batch)]) {
-
+  tryCatch({
   
   setwd(baseDir)
   
@@ -252,9 +253,7 @@ for (i in batch[1]:batch[length(batch)]) {
     allbetas[k, 2:7] <-
       c(betas[k, "X2"], no.params, no.pres, loglik, AIC, AICc)
     
-    
-    
-    print(k)
+
   }
   
   # need to save this?
@@ -408,35 +407,48 @@ for (i in batch[1]:batch[length(batch)]) {
   
   ## FILE SAVING --------------------------------------
    
+    #save model outputs in species folder
+    dir.create(paste0(baseDir,"/results/", specs[i])) 
     
-    file.rename(from = "maxentResults.csv", to = paste0(baseDir, "/results/", specs[i], "_maxentResults.csv"))
-    write.csv(allbetas, paste0(baseDir, "/results/", specs[i], "_allbetas.csv"))
+    file.rename(from = "maxentResults.csv", to = paste0(baseDir, "/results/", specs[i], "/", specs[i], "_maxentResults.csv"))
+    write.csv(allbetas, paste0(baseDir, "/results/",  specs[i], "/", specs[i], "_allbetas.csv"))
     
-    #save model outputs (plots, html, model R object) all in one place
-    dir.create(paste0(baseDir,"/results/", specs[i], "_model")) 
     
-    file.rename(from ="maxent.html", to = paste0(baseDir, "/results/",specs[i], "_model/", specs[i], "_maxent.html"))
-    file.rename(from = "plots/", to = paste0(baseDir, "/results/",specs[i], "_model/", "plots/"))
+    
+    file.rename(from ="maxent.html", to = paste0(baseDir, "/results/", specs[i], "/", specs[i], "_maxent.html"))
+    file.rename(from = "plots/", to = paste0(baseDir, "/results/", specs[i], "/", "plots/"))
     # remove all the extra plots
-    files <- list.files(path = paste0(baseDir, "/results/",specs[i], "_model/", "plots/"), full.names = TRUE)
+    files <- list.files(path = paste0(baseDir, "/results/", specs[i], "/", "plots/"), full.names = TRUE)
     files.remove <- grep(pattern = "species_bio", x = files, value = TRUE, invert = TRUE)
     file.remove(files.remove)
     
-    save(xm, file = paste(paste0(baseDir, "/results/", specs[i], "_model/", specs[i]), bestbetas[i,"bestbeta"], "xm.RData", sep = '_'))
+    save(xm, file = paste(paste0(baseDir, "/results/", specs[i], "/", specs[i]), bestbetas[i,"bestbeta"], "xm.RData", sep = '_'))
     
     #save the next two in case something happens and final file is not created at end of species loop
-    write.csv(bestbetas[i,], paste0(baseDir, "/results/", specs[i], "_beta_params.csv"))
-    write.csv(final.summary[i,], paste0(baseDir, "/results/", specs[i], "_final_summary.csv"))
+    write.csv(bestbetas[i,], paste0(baseDir, "/results/",  specs[i], "/", specs[i], "_beta_params.csv"))
+    write.csv(final.summary[i,], paste0(baseDir, "/results/",  specs[i], "/", specs[i], "_final_summary.csv"))
     
-    writeRaster(x = maps, filename = paste0(baseDir, "/results/", specs[i], '_map_outputs.tif'), 
+    writeRaster(x = maps, filename = paste0(baseDir, "/results/",  specs[i], "/", specs[i], '_map_outputs.tif'), 
                 options="INTERLEAVE=BAND", overwrite = TRUE)
     
     
-   # upload results folder to googledrive
-    drive_upload
+   # upload to species folder on googledrive
+    #create a species folder
+    folder <- drive_mkdir(name = specs[i], path = drive_results)
+    
+    #list all files in local species results folder
+    local_files <- list.files(paste0(baseDir,"/results/", specs[i], "/"), recursive = TRUE, full.names = TRUE)
+    
+    # upload all files to species folder
+    with_drive_quiet(
+      files <- purrr::map(local_files, ~ drive_upload(.x, path = folder))
+    )
+    
     
     print(i)
     
+  }, error=function(e){cat("Species=", specs[i], "Index =", i, 
+                           "ERROR :", conditionMessage(e), "\n")})
   
 }
 
@@ -448,6 +460,19 @@ write.csv(bestbetas, file =  paste(batch[1], batch[length(batch)], 'bestbetas.cs
 
 #final summary file
 write.csv(final.summary, paste(batch[1], batch[length(batch)], "final_summary.csv", sep = "_")) #add specific batch name
+
+#upload to google drive
+drive_upload(paste0(
+  baseDir,
+  "/results/",
+  paste(batch[1], batch[length(batch)], "final_summary.csv", sep = "_")
+), path = drive_results)
+
+drive_upload(paste0(
+  baseDir,
+  "/results/",
+  paste(batch[1], batch[length(batch)], 'bestbetas.csv', sep = "_")
+), path = drive_results)
 
 
 
